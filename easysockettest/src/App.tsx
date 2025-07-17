@@ -1,13 +1,9 @@
-
-
-import  { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { connect, disconnect, isConnected, on, off } from '@mokfembam/easysocket-client';
-
 
 const WS_URL = 'ws://localhost:8080/websocket';
 
 function App() {
-
   const [status, setStatus] = useState('disconnected');
 
   useEffect(() => {
@@ -26,7 +22,7 @@ function App() {
       console.log('WebSocket: Attempting to reconnect...');
     };
 
-    const handleError = (error: Event) => { 
+    const handleError = (error: Event) => {
       setStatus('error');
       console.error('WebSocket Error from library:', error);
     };
@@ -36,7 +32,6 @@ function App() {
     on('reconnecting', handleReconnecting);
     on('error', handleError);
 
-  
     if (!isConnected()) {
       console.log('Attempting initial WebSocket connection...');
       connect(WS_URL);
@@ -48,11 +43,8 @@ function App() {
       off('disconnected', handleDisconnected);
       off('reconnecting', handleReconnecting);
       off('error', handleError);
-
-  
     };
   }, []);
-
 
   const handleConnectClick = () => {
     console.log('User clicked Connect.');
@@ -66,29 +58,43 @@ function App() {
 
   // --- Render UI ---
   return (
-    <div style={{ padding: '20px', fontFamily: 'Arial, sans-serif', maxWidth: '600px', margin: 'auto', border: '1px solid #eee', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
-      <h1 style={{ textAlign: 'center', color: '#333' }}>WebSocket Connection Status</h1>
-      <p style={{ textAlign: 'center', fontSize: '1.2em' }}>
-        Status: <span style={{ color: status === 'connected' ? 'green' : (status === 'reconnecting' ? 'orange' : 'red'), fontWeight: 'bold' }}>
-          {status.toUpperCase()}
-        </span>
-      </p>
+    // Outer div to centralize content vertically and horizontally on the page
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="p-8 font-sans max-w-xl mx-auto border border-gray-200 rounded-lg shadow-md bg-white">
+        <h1 className="text-center text-3xl font-semibold text-gray-800 mb-6">
+          WebSocket Connection Status
+        </h1>
+        <p className="text-center text-lg mb-8">
+          Status:{' '}
+          <span
+            className={`font-bold ${
+              status === 'connected'
+                ? 'text-green-600'
+                : status === 'reconnecting'
+                ? 'text-orange-500'
+                : 'text-red-600'
+            }`}
+          >
+            {status.toUpperCase()}
+          </span>
+        </p>
 
-      <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginTop: '30px' }}>
-        <button
-          onClick={handleConnectClick}
-          disabled={status === 'connected' || status === 'reconnecting'}
-          style={{ padding: '10px 20px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '1em' }}
-        >
-          Connect
-        </button>
-        <button
-          onClick={handleDisconnectClick}
-          disabled={status === 'disconnected' || status === 'error'}
-          style={{ padding: '10px 20px', backgroundColor: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '1em' }}
-        >
-          Disconnect
-        </button>
+        <div className="flex gap-4 justify-center mt-6">
+          <button
+            onClick={handleConnectClick}
+            disabled={status === 'connected' || status === 'reconnecting'}
+            className="px-6 py-3 bg-green-500 text-white rounded-md cursor-pointer text-lg font-medium hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+          >
+            Connect
+          </button>
+          <button
+            onClick={handleDisconnectClick}
+            disabled={status === 'disconnected' || status === 'error'}
+            className="px-6 py-3 bg-red-500 text-white rounded-md cursor-pointer text-lg font-medium hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+          >
+            Disconnect
+          </button>
+        </div>
       </div>
     </div>
   );

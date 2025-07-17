@@ -1,5 +1,48 @@
 import MyWebSocketServer from '@mokfembam/easysocket-server';
 
+import sql from 'mssql';
+
+
+const config = 
+
+{
+  server: 'DESKTOP-3L9H3VU',
+  port: 1433,
+  database: 'TestDB',
+  options: {
+    trustedConnection: true, 
+    enableArithAort:true,
+    encrypt: false, // for local dev
+    trustServerCertificate: true ,
+
+  }
+}
+
+async function connectAndQuery() {
+    try {
+        console.log('Attempting to connect to SQL Server...');
+        const pool = await sql.connect(config);
+        console.log('Successfully connected to SQL Server!');
+
+        const request = pool.request();
+        console.log('Executing query: SELECT * FROM Workers');
+        const result = await request.query('SELECT WorkerID, FirstName, LastName, Department, Salary FROM Workers');
+
+        console.log('Query Results:');
+        console.table(result.recordset); 
+
+    
+        await pool.close();
+        console.log('Connection closed.');
+
+    } catch (err) {
+
+        console.error('Database operation failed:', err);
+    }
+}
+
+
+
 
 const WS_PORT = 8080;
 const WS_PATH = '/websocket'; 
@@ -10,6 +53,7 @@ server.start()
     .then(() => {
         console.log(`WebSocket server is running on ws://localhost:${WS_PORT}${WS_PATH}`);
         console.log('Waiting for clients to connect...');
+        connectAndQuery();
     })
     .catch(err => {
         console.error('Failed to start WebSocket server:', err);
@@ -18,8 +62,7 @@ server.start()
 
 // --- Server-side Logic for Handling Messages ---
 
-// You can interact with the server instance to send messages:
-// Example: Broadcast a message to all connected clients every 10 seconds
+
 setInterval(() => {
     if (server.getConnectedClientCount() > 0) {
         server.broadcastMessage({
@@ -31,7 +74,7 @@ setInterval(() => {
     }
 }, 10000);
 
-// --- Graceful Shutdown (Important for Node.js servers) ---
+
 process.on('SIGINT', async () => {
     console.log('Received SIGINT. Shutting down server...');
     await server.stop();
