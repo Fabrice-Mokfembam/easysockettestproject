@@ -1,88 +1,70 @@
+import { Sequelize } from 'sequelize';
 import MyWebSocketServer from '@mokfembam/easysocket-server';
 
-import sql from 'mssql';
+const sequelize = new Sequelize('workers', 'root', 'root1234', {
+  dialect: 'mysql',
+  host: 'localhost',
+  port: 3306,
+  logging: false
+});
 
-
-const config = 
-
-{
-  server: 'DESKTOP-3L9H3VU',
-  port: 1433,
-  database: 'TestDB',
-  options: {
-    trustedConnection: true, 
-    enableArithAort:true,
-    encrypt: false, // for local dev
-    trustServerCertificate: true ,
-
+async function fetchEmployeeData() {
+  try {
+    await sequelize.authenticate();
+    const [results] = await sequelize.query(
+      'SELECT employee_id AS WorkerID, first_name AS FirstName, last_name AS LastName, department AS Department, salary AS Salary FROM employees'
+    );
+    return results;
+  } catch (err) {
+    console.error('Error fetching employee data:', err);
+    return [];
   }
 }
 
-async function connectAndQuery() {
-    try {
-        console.log('Attempting to connect to SQL Server...');
-        const pool = await sql.connect(config);
-        console.log('Successfully connected to SQL Server!');
-
-        const request = pool.request();
-        console.log('Executing query: SELECT * FROM Workers');
-        const result = await request.query('SELECT WorkerID, FirstName, LastName, Department, Salary FROM Workers');
-
-        console.log('Query Results:');
-        console.table(result.recordset); 
-
-    
-        await pool.close();
-        console.log('Connection closed.');
-
-    } catch (err) {
-
-        console.error('Database operation failed:', err);
-    }
-}
-
-
-
-
-const WS_PORT = 8080;
-const WS_PATH = '/websocket'; 
-
+const WS_PORT = 8087;
+const WS_PATH = '/websocket';
 const server = new MyWebSocketServer(WS_PORT, WS_PATH);
 
 server.start()
-    .then(() => {
-        console.log(`WebSocket server is running on ws://localhost:${WS_PORT}${WS_PATH}`);
-        console.log('Waiting for clients to connect...');
-        connectAndQuery();
-    })
-    .catch(err => {
-        console.error('Failed to start WebSocket server:', err);
-        process.exit(1);
-    });
-
-// --- Server-side Logic for Handling Messages ---
-
-
-setInterval(() => {
-    if (server.getConnectedClientCount() > 0) {
-        server.broadcastMessage({
-            type: 'serverUpdate',
-            content: `Current server time: ${new Date().toLocaleTimeString()}`,
-            clientsOnline: server.getConnectedClientCount()
-        });
-        console.log(`Broadcasted server update to ${server.getConnectedClientCount()} clients.`);
+  .then(async () => {
+    console.log(`WebSocket server is running on ws://localhost:${WS_PORT}${WS_PATH}`);
+    try {
+      await sequelize.authenticate();
+      console.log('Successfully connected to MySQL using Sequelize for server startup!');
+    } catch (err) {
+      console.error('Failed to connect to MySQL during server startup:', err);
     }
-}, 10000);
+  })
+  .catch(err => {
+    console.error('Failed to start WebSocket server:', err);
+    process.exit(1);
+  });
 
+
+
+setInterval(async () => { 
+  if (server.getConnectedClientCount() > 0) {
+    const employeeData = await fetchEmployeeData(); 
+    server.broadcastMessage({
+      type: 'employeeDataUpdate', 
+      content: employeeData,
+      serverTime: new Date().toLocaleTimeString(),
+      clientsOnline: server.getConnectedClientCount()
+    });
+    console.log(`Broadcasted employee data and server update to ${server.getConnectedClientCount()} clients.`);
+  }
+}, 10000); 
 
 process.on('SIGINT', async () => {
-    console.log('Received SIGINT. Shutting down server...');
-    await server.stop();
-    process.exit(0);
+  console.log('Received SIGINT. Shutting down server and closing DB connection...');
+  await server.stop();
+  await sequelize.close();
+  process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
-    console.log('Received SIGTERM. Shutting down server...');
-    await server.stop();
-    process.exit(0);
+  console.log('Received SIGTERM. Shutting down server and closing DB connection...');
+  await server.stop();
+  await sequelize.close();
+  process.exit(0);
 });
