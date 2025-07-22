@@ -10,7 +10,6 @@ function App() {
 
     connect(WS_URL);
 
-   
     const handleEmployeeData = (data) => {
       if (data.type === 'employeeDataUpdate') {
         setEmployees(data.content);
