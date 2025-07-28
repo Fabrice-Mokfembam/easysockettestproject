@@ -52,8 +52,6 @@ async function listenToServiceBrokerQueue() {
   try {
     const pool = await poolConnect;
     console.log('🎧 Listening to EmployeeChangeQueue...');
-
-    while (true) {
       const result = await pool.request().query(`
         WAITFOR (
           RECEIVE TOP(1)
@@ -61,11 +59,9 @@ async function listenToServiceBrokerQueue() {
             message_type_name,
             message_body
           FROM EmployeeChangeQueue
-        ), TIMEOUT 10000;
+        );
       `);
-
       const message = result.recordset[0];
-
       if (message) {
         const body = message.message_body.toString('utf8');
         console.log('📩 New Service Broker Message:', body);
@@ -87,7 +83,7 @@ async function listenToServiceBrokerQueue() {
           END CONVERSATION '${message.conversation_handle}';
         `);
       }
-    }
+    
   } catch (err) {
     console.error('❌ Error while listening to Service Broker:', err);
   }
