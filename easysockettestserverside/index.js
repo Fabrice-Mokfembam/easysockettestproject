@@ -1,5 +1,6 @@
 import sql from 'mssql';
 import MyWebSocketServer from '@mokfembam/easysocket-server';
+import express from 'express';
 
 const config = {
   server: 'localhost',
@@ -20,7 +21,12 @@ const poolConnect = pool.connect();
 
 const WS_PORT = 8087;
 const WS_PATH = '/websocket';
+const HTTP_PORT = 3000; // HTTP server for Python notifications
 const server = new MyWebSocketServer(WS_PORT, WS_PATH);
+const app = express();
+
+
+app.use(express.json());
 
 /**
  * Fetch employee data
@@ -36,7 +42,7 @@ async function fetchEmployeeData() {
         last_name AS LastName, 
         department AS Department, 
         salary AS Salary 
-      FROM employees
+      FROM dbo.employees
     `);
     return result.recordset;
   } catch (err) {
@@ -46,65 +52,50 @@ async function fetchEmployeeData() {
 }
 
 /**
- * Listen to Service Broker Queue
+ * HTTP Endpoint for Python activator notifications
  */
-async function listenToServiceBrokerQueue() {
+app.post('/db-notification', async (req, res) => {
   try {
-    const pool = await poolConnect;
-    console.log('🎧 Listening to EmployeeChangeQueue...');
-      const result = await pool.request().query(`
-        WAITFOR (
-          RECEIVE TOP(1)
-            conversation_handle,
-            message_type_name,
-            message_body
-          FROM EmployeeChangeQueue
-        );
-      `);
-      const message = result.recordset[0];
-      if (message) {
-        const body = message.message_body.toString('utf8');
-        console.log('📩 New Service Broker Message:', body);
+    console.log('📩 Received notification from Python activator:', req.body);
 
-        const employeeData = await fetchEmployeeData();
-
-        if (server.getConnectedClientCount() > 0) {
-          server.broadcastMessage({
-            type: 'employeeDataUpdate',
-            content: employeeData,
-            serverTime: new Date().toLocaleTimeString(),
-            clientsOnline: server.getConnectedClientCount()
-          });
-
-          console.log(`✅ Broadcasted to ${server.getConnectedClientCount()} clients.`);
-        }
-
-        await pool.request().query(`
-          END CONVERSATION '${message.conversation_handle}';
-        `);
-      }
-    
-  } catch (err) {
-    console.error('❌ Error while listening to Service Broker:', err);
-  }
-}
-
-/**
- * Start WebSocket Server
- */
-server.start()
-  .then(async () => {
-    console.log(`✅ WebSocket server is running at ws://localhost:${WS_PORT}${WS_PATH}`);
-
-    try {
-      await poolConnect;
-      console.log('✅ Connected to SQL Server!');
-    } catch (err) {
-      console.error('❌ SQL Server connection failed:', err);
-      process.exit(1);
+    // Fetch and broadcast updated employee data
+    const employeeData = await fetchEmployeeData();
+    if (server.getConnectedClientCount() > 0) {
+      server.broadcastMessage({
+        type: 'employeeDataUpdate',
+        content: employeeData,
+        serverTime: new Date().toLocaleTimeString(),
+        clientsOnline: server.getConnectedClientCount()
+      });
+      console.log(`✅ Broadcasted to ${server.getConnectedClientCount()} clients.`);
     }
 
-    // Handle new client connection
+    res.status(200).send('Notification received');
+  } catch (err) {
+    console.error('❌ Error processing notification:', err);
+    res.status(500).send('Error processing notification');
+  }
+});
+
+/**
+ * Start WebSocket and HTTP Servers
+ */
+async function startServers() {
+  try {
+    // Start WebSocket server
+    await server.start();
+    console.log(`✅ WebSocket server is running at ws://localhost:${WS_PORT}${WS_PATH}`);
+
+    // Start HTTP server
+    app.listen(HTTP_PORT, () => {
+      console.log(`✅ HTTP server is running at http://localhost:${HTTP_PORT}`);
+    });
+
+    // Connect to SQL Server
+    await poolConnect;
+    console.log('✅ Connected to SQL Server!');
+
+    // Handle new WebSocket client connection
     server.onClientConnect(async (client) => {
       console.log('➕ New client connected. Sending initial employee data...');
       const employeeData = await fetchEmployeeData();
@@ -115,14 +106,11 @@ server.start()
         clientsOnline: server.getConnectedClientCount()
       });
     });
-
-    // Start listening for DB change messages
-    listenToServiceBrokerQueue();
-  })
-  .catch(err => {
-    console.error('❌ Failed to start WebSocket server:', err);
+  } catch (err) {
+    console.error('❌ Failed to start servers:', err);
     process.exit(1);
-  });
+  }
+}
 
 /**
  * Graceful Shutdown
@@ -130,15 +118,16 @@ server.start()
 async function shutdown() {
   console.log('🔻 Shutting down...');
   await server.stop();
-
   try {
     await pool.close();
     console.log('✅ SQL Server connection closed.');
   } catch (err) {
     console.error('❌ Error closing SQL connection:', err);
   }
-
   process.exit(0);
 }
 
 process.on('SIGINT', shutdown);
+
+
+startServers();
