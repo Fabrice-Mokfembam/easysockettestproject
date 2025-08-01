@@ -9,11 +9,11 @@ const config = {
   password: 'ABCdef123.', 
   port: 1433,
   options: {
-    instanceName: 'SQLEXPRESS',  
+    instanceName: 'SQLEXPRESS', 
     encrypt: true, 
     trustServerCertificate: true, 
     enableArithAbort: true,
-    requestTimeout: 30000 
+    requestTimeout: 50000 
   }
 };
 
@@ -36,6 +36,8 @@ async function fetchEmployeeData() {
   try {
     await poolConnectPromise; 
     const request = pool.request();
+    
+    // The query fetches all employees from the database
     const result = await request.query(`
       SELECT
         employee_id AS WorkerID,
@@ -43,7 +45,7 @@ async function fetchEmployeeData() {
         last_name AS LastName,
         department AS Department,
         salary AS Salary
-      FROM dbo.employees
+      FROM dbo.employees WITH (NOLOCK)
     `);
     return result.recordset;
   } catch (err) {
@@ -54,19 +56,42 @@ async function fetchEmployeeData() {
 
 // Webhook endpoint for SQL trigger
 app.post('/db-change', async (req, res) => {
-  console.log('Received DB change notification:', req.body);
-  try {
-    const employeeData = await fetchEmployeeData();
+
+  console.log('🔔 Received DB change notification from SQL Server.');
   
+  // Log the specific changes received in the webhook body
+  const { inserted, deleted } = req.body;
+  
+  if (inserted && inserted.length > 0) {
+    console.log('✨ Records INSERTED or UPDATED:');
+    console.log(inserted);
+  }
+  
+  if (deleted && deleted.length > 0) {
+    console.log('🗑️ Records DELETED or UPDATED:');
+    console.log(deleted);
+  }
+
+  try {
+    // Fetch the latest employee data
+    const employeeData = await fetchEmployeeData();
+    console.log(`✅ Successfully fetched ${employeeData.length} employee records from the database.`);
+    
+    // Broadcast the updated data to all connected WebSocket clients
     server.broadcastMessage({
       type: 'employeeDataUpdate',
       content: employeeData,
       serverTime: new Date().toLocaleTimeString(),
       clientsOnline: server.getConnectedClientCount()
     });
+
+    // Log the broadcast event to the console
+    console.log(`📡 Broadcasted updated employee data to ${server.getConnectedClientCount()} clients at ${new Date().toLocaleTimeString()}`);
+    
+    // Send a success status back to the SQL Server trigger
     res.sendStatus(200);
   } catch (error) {
-    console.error('Error in /db-change webhook:', error);
+    console.error('❌ Error in /db-change webhook:', error);
     res.status(500).send('Internal Server Error');
   }
 });
@@ -89,7 +114,7 @@ async function startServers() {
     await poolConnectPromise;
     console.log('✅ Connected to SQL Server!');
 
-  
+    // Handle new client connections
     server.onClientConnect(async (client) => {
       console.log('➕ New client connected. Sending initial employee data...');
       const employeeData = await fetchEmployeeData();
@@ -99,6 +124,7 @@ async function startServers() {
         serverTime: new Date().toLocaleTimeString(),
         clientsOnline: server.getConnectedClientCount()
       });
+      console.log(`✅ Sent initial data to new client. Total clients online: ${server.getConnectedClientCount()}`);
     });
 
   } catch (err) {
@@ -122,8 +148,8 @@ async function shutdown() {
   process.exit(0);
 }
 
-
 process.on('SIGINT', shutdown);
+
 
 // Start all servers
 startServers();
